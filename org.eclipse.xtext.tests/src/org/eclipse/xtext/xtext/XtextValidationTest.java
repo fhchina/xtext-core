@@ -9,6 +9,11 @@ package org.eclipse.xtext.xtext;
 
 import static com.google.common.collect.Maps.*;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -62,6 +67,7 @@ import org.junit.Test;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Sets;
+import com.google.common.io.Files;
 
 /**
  * @author Sebastian Zarnekow - Initial contribution and API
@@ -70,12 +76,16 @@ import com.google.common.collect.Sets;
 public class XtextValidationTest extends AbstractValidationMessageAcceptingTestCase {
 
 	private String lastMessage;
+	private URL xtextValidationTest_ecore;
 	
 	@Override
 	public void setUp() throws Exception {
 		super.setUp();
 		with(XtextStandaloneSetup.class);
 		EValidator.Registry.INSTANCE.put(EcorePackage.eINSTANCE, EcoreValidator.INSTANCE);
+			File tempFile = File.createTempFile("XtextValidationTest", "ecore");
+			Files.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><ecore:EPackage xmi:version=\"2.0\" xmlns:xmi=\"http://www.omg.org/XMI\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ecore=\"http://www.eclipse.org/emf/2002/Ecore\" name=\"XtextValidationBugs\" nsURI=\"http://XtextValidationBugs\" nsPrefix=\"XtextValidationBugs\"><eClassifiers xsi:type=\"ecore:EClass\" name=\"Bug322875\"><eStructuralFeatures xsi:type=\"ecore:EReference\" name=\"referencesETypeFromClasspathPackage\" eType=\"ecore:EClass classpath:/org/eclipse/xtext/Xtext.ecore#//Grammar\"/></eClassifiers></ecore:EPackage>", tempFile, StandardCharsets.UTF_8);
+			xtextValidationTest_ecore = tempFile.toURI().toURL();
 	}
 	
 	private void configureValidator(XtextValidator validator, ValidationMessageAcceptor messageAcceptor, EObject currentObject) {
@@ -339,7 +349,7 @@ public class XtextValidationTest extends AbstractValidationMessageAcceptingTestC
 		assertEquals(diag.getChildren().toString(), 4, diag.getChildren().size());
 		assertEquals("diag.isError", diag.getSeverity(), Diagnostic.ERROR);
 	}
-	
+
 	@Test
 	public void testBug322875_01() throws Exception {
 		String testGrammar = "grammar foo.Bar with org.eclipse.xtext.common.Terminals\n " +
@@ -349,6 +359,19 @@ public class XtextValidationTest extends AbstractValidationMessageAcceptingTestC
 		XtextResource resource = getResourceFromStringAndExpect(testGrammar,1);
 		assertFalse(resource.getErrors().toString(), resource.getErrors().isEmpty());
 		assertBug322875(resource);
+	}
+
+	@Override
+	protected Object getClasspathURIContext() {
+		return new ClassLoader(getClass().getClassLoader()) {
+			@Override
+			public URL getResource(String name) {
+				if ("org/eclipse/xtext/xtext/XtextValidationTest.ecore".equals(name)) {
+					return xtextValidationTest_ecore;
+				}
+				return super.getResource(name);
+			}
+		};
 	}
 
 	protected void assertBug322875(XtextResource resource) {
